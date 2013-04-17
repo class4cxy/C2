@@ -12,13 +12,15 @@
  *         20130322 - 修改 include 方法，支持异步/同步加载，去除 use 方法，去除 plugin 属性
  *                    文件加载不再以功能模块为单位，以文件为单位！
  *                    修复相同文件同时加载造成的重载问题
+ *         20130410 - lazy.include - rCacheIndex bug 修复
+ *         20130417 - C.DIFF 增加MouseWheel兼容'DOMMouseScroll' and 'mousewheel'
  */
  
 (function () {
 
 var C = {},
 
-    toString = Object.prototype.toString,
+	toString = Object.prototype.toString,
 	
 	Root = "http://www.jdoi.net/C/",
 	
@@ -255,6 +257,7 @@ C.Util = {
 			
 			add : function (evt) {
 				Events[Events.length] = evt;
+				return this
 			},
 			
 			execute : function () {
@@ -374,6 +377,7 @@ C.Browser = (function () {
 C.DIFF = (function(){
 
 	var isIe = C.Browser.ie,
+		isFx = C.Browser.firefox,
 		ver  = parseInt(isIe);
 
 	return {
@@ -381,7 +385,8 @@ C.DIFF = (function(){
 		"doi"        : isIe ? "readystatechange" : "DOMContentLoaded",
 		"innerText"  : isIe ? "innerText" : "textContent",
 		"mouseenter" : isIe ? "mouseenter" : "mouseover",
-		"mouseleave" : isIe ? "mouseleave" : "mouseout"
+		"mouseleave" : isIe ? "mouseleave" : "mouseout",
+		"MouseWheel" : isFx ? 'DOMMouseScroll' : 'mousewheel'
 	}
 
 })();
@@ -461,12 +466,12 @@ C.Array = {
 	 * 20130210
 	 */
 	indexOf : function ( arr, item ) {
-		
+
 		var len = arr.length;
 		
 		if ( !C.Util.isArray(arr) || !len ) return -1;
 
-		if ( !!arr.indexOf ) {
+		if ( !arr.indexOf ) {
 			
 			while ( len-- ) 
 			
@@ -597,6 +602,8 @@ C.Event = {
 
 					var related = evt.relatedTarget,
 						current = evt.currentTarget;
+					
+					//console.log( related, current )
 					// check, come from baidu's tangram
 					if (
 						// 如果current和related都是body，contains函数会返回false
@@ -1430,7 +1437,7 @@ C._fn._extend((function (){
 
 				each( this.doms, function ( index, elem ) {
 
-					oldClass = _attr( elem, "class" );
+					oldClass = _attr( elem, "class", "getAttribute" );
 						
 					if ( !oldClass ) return _attr(elem, {"class" : val}, "setAttribute");
 					// if class had exist will not be add again
@@ -1759,6 +1766,8 @@ C.lazy = (function () {
 			
 				Cache = {},
 				
+				rCacheIndex = /(?:^|\/)((?:[\w\.\-]+)\.(?:js|css))[?#]*/,
+				
 				Status = ["", "Building", "Loading", "Complete"];
 
 			/* status:
@@ -1775,14 +1784,15 @@ C.lazy = (function () {
 				this.Events = [];
 
 			}
-			_file.realCallback = function (index, callbacks) {
+			_file.realCallback = function () {
 				
+				var Events = this.Events;
 				// complete
-				Cache[index].status = 3;
+				this.status = 3;
 				// triggle callbacks
-				for ( var i = 0, len = callbacks.length; i < len; i++ ) {
+				for ( var i = 0, len = Events.length; i < len; i++ ) {
 					
-					callbacks[i](index);
+					Events[i]();
 					
 				}
 
@@ -1796,7 +1806,7 @@ C.lazy = (function () {
 				
 				// loading
 				this.status = 2;
-				
+
 				if ( rCss.test(this.index) ) {
 
 					node = create("link", {
@@ -1813,7 +1823,7 @@ C.lazy = (function () {
 								clearInterval( cssHandle );
 								cssHandle = null
 							}
-							_file.realCallback(ts.index, ts.Events);
+							_file.realCallback.call(ts);
 
 						}
 	
@@ -1849,7 +1859,7 @@ C.lazy = (function () {
 							// Dereference the node
 							node = undefined;
 							//callback(index);
-							_file.realCallback(ts.index, ts.Events);
+							_file.realCallback.call(ts);
 	
 						}
 	
@@ -1862,38 +1872,45 @@ C.lazy = (function () {
 				return this
 				
 			}
+			
 			// 同步加载
 			function _sync ( files, callback ) {
 				
 				//_loadedFile
 				var len = files.length,
-					done = function ( index ) {
+					done = function () {
 						!--len && callback && callback();
 					},
-					isCache;
+					isCache,
+					index;
 
 				each ( files, function ( k, item ) {
-					
+
+					// plugin/scroll/scroll.js?ver=2.0 => scroll
+					index = rCacheIndex.exec(item)[1];
+
 					// if object has been cache
-					if ( !!(isCache=Cache[item]) ) {
+					if ( !!(isCache=Cache[index]) ) {
 						// if status is complete
 						isCache.status == 3 ?
-							done( item )
+							done()
 						:
 							isCache.Events.push( done );
 
-					} else (Cache[item] = new _file(item)).load().Events.push(done);
-					
+					} else (Cache[index] = new _file(item)).load().Events.push(done);
+
 				});
 
 			}
 			// 异步加载
 			function _async( files, callback ) {
-					
+
 				if ( !!files.length ) {
 				
 					var item = files.shift(),
-						isCache = Cache[item];
+						// plugin/scroll/scroll.js?ver=2.0 => scroll
+						index = rCacheIndex.exec(item)[1],
+						isCache = Cache[index];
 					
 					if ( !!isCache ) {
 						
@@ -1906,7 +1923,7 @@ C.lazy = (function () {
 								}
 							);
 						
-					} else (Cache[item] = new _file(item)).load().Events.push(function () { _async( files, callback ); });
+					} else (Cache[index] = new _file(item)).load().Events.push(function () { _async( files, callback ); });
 					
 				} else callback && callback();
 

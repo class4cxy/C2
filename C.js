@@ -15,7 +15,13 @@
  *         20130410 - lazy.include - rCacheIndex bug 修复
  *         20130417 - C.DIFF 增加MouseWheel兼容'DOMMouseScroll' and 'mousewheel'
  */
- 
+
+/**
+ * to do list...
+ * #fix - 1294 IE8出问题
+ * #fix - live evt.target || evt.srcElement 存在bug
+ * #add - include 增加对本地文件检测
+ */
 (function () {
 
 var C = {},
@@ -224,6 +230,8 @@ C.Util = {
 			b && c && ( map[b] = c );
 
 		});
+		
+		map.hash = document.location.hash.replace(/^#/, "");
 
 		return map;		
 	},
@@ -596,8 +604,9 @@ C.Event = {
 			sm = function( evt ) {
 
 				var obj = evt.target || evt.srcElement,
-					index;
-				
+					index,
+					livers;
+
 				if ( ( type == "mouseenter" || type == "mouseleave" ) && !C.Browser.ie ) {
 
 					var related = evt.relatedTarget,
@@ -618,13 +627,17 @@ C.Event = {
 
 					) return;
 				}
+				//console.log(Sizzle(selector, elem))
 				// on live
-				if ( selector && selector.length ) {
-					
+				if ( selector ) {
+
+					//log( livers )
 					// match itself or contains the target
-					if ( (index=C.Array.indexOf(selector, obj))>-1 || (index=__contains(selector, obj))>-1 ) 
+					if ( (livers = Sizzle(selector, elem)).length && ((index=C.Array.indexOf(livers, obj))>-1 || (index=__contains(livers, obj))>-1) ) {
 				
-						fn && fn.call( selector[index], evt );
+						fn && fn.call( livers[index], evt );
+					
+					}
 				
 				// on bind
 				} else {
@@ -1290,7 +1303,7 @@ C._fn._extend({
 		if ( html !== undefined ) {
 			
 			each( this.doms, function ( index, elem ) {
-			
+
 				elem.innerHTML = html;
 				
 			});
@@ -1911,7 +1924,7 @@ C.lazy = (function () {
 						// plugin/scroll/scroll.js?ver=2.0 => scroll
 						index = rCacheIndex.exec(item)[1],
 						isCache = Cache[index];
-					
+
 					if ( !!isCache ) {
 						
 						isCache.status == 3 ?
@@ -2214,7 +2227,7 @@ C.TmplM = (function () {
 		current;
 
 	var // 匹配变量
-		rVar = /\{@([^\}]+)\}/g,
+		rVar = /\{@([^\}\{]+)\}/,
 		// 匹配转意符
 		rClean = /\\(\{|\})/g,
 		// 匹配script语句
@@ -2246,7 +2259,13 @@ C.TmplM = (function () {
 							
 							return b + script[1] + "\n";
 							
-						} else return b +"_s += '"+ c.replace( rVar, "'+($1)+'" ) +"';\n";
+						} else {
+							
+							while ( rVar.test(c) ) c = c.replace( rVar, "'+($1)+'" );
+							
+							return b +"_s += '"+ c +"';\n";
+							
+						}
 						
 					} else return "";
 				});
